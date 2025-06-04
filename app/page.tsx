@@ -1,103 +1,293 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+import { useState, useCallback } from 'react'
+import { Upload, Loader2, Download, AlertCircle, Sparkles } from 'lucide-react'
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+interface ProcessedResult {
+  success: boolean
+  error?: string
+  descriptions?: string[]
+  products?: Array<{
+    product_name: string
+    product_type: string
+    brand_name?: string
+  }>
+  prompts?: string[]
+  generated_images?: string[]
+  sessionId?: string
+}
+
+export default function VisualGodApp() {
+  const [files, setFiles] = useState<File[]>([])
+  const [processing, setProcessing] = useState(false)
+  const [result, setResult] = useState<ProcessedResult | null>(null)
+  const [dragActive, setDragActive] = useState(false)
+
+  const handleDrag = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true)
+    } else if (e.type === "dragleave") {
+      setDragActive(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragActive(false)
+
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(
+      file => file.type.startsWith('image/')
+    )
+    setFiles(prev => [...prev, ...droppedFiles])
+  }, [])
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const selectedFiles = Array.from(e.target.files).filter(
+        file => file.type.startsWith('image/')
+      )
+      setFiles(prev => [...prev, ...selectedFiles])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const processImages = async () => {
+    if (files.length === 0) return
+
+    setProcessing(true)
+    setResult(null)
+
+    try {
+      // Convert files to base64
+      const imagePromises = files.map(file => {
+        return new Promise<{ base64: string; filename: string }>((resolve) => {
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            const base64 = e.target?.result as string
+            resolve({
+              base64: base64.split(',')[1], // Remove data:image/jpeg;base64, prefix
+              filename: file.name
+            })
+          }
+          reader.readAsDataURL(file)
+        })
+      })
+
+      const images = await Promise.all(imagePromises)
+
+      // Call API
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          images,
+          userId: null // Add auth later
+        }),
+      })
+
+      const data = await response.json()
+      setResult(data)
+
+    } catch (error) {
+      setResult({
+        success: false,
+        error: error instanceof Error ? error.message : 'Processing failed'
+      })
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const reset = () => {
+    setFiles([])
+    setResult(null)
+  }
+
+  if (result) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 shadow-2xl">
+            <h1 className="text-4xl font-bold text-white mb-8 text-center flex items-center justify-center gap-3">
+              <Sparkles className="w-10 h-10" />
+              Visual God Results
+            </h1>
+
+            {result.success ? (
+              <div className="space-y-6">
+                {/* Classification Results */}
+                <div className="bg-white/10 rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-white mb-4">Image Classifications</h2>
+                  <div className="flex flex-wrap gap-2">
+                    {result.descriptions?.map((desc, i) => (
+                      <span key={i} className={`px-3 py-1 rounded-full text-sm ${
+                        desc === 'product' ? 'bg-green-500/30 text-green-100' :
+                        desc === 'avatar' ? 'bg-blue-500/30 text-blue-100' :
+                        'bg-gray-500/30 text-gray-100'
+                      }`}>
+                        {files[i]?.name}: {desc}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Products */}
+                {result.products && result.products.length > 0 && (
+                  <div className="bg-white/10 rounded-xl p-6">
+                    <h2 className="text-xl font-semibold text-white mb-4">Detected Products</h2>
+                    <div className="space-y-2">
+                      {result.products.map((product, i) => (
+                        <div key={i} className="bg-white/5 rounded-lg p-3">
+                          <p className="text-white font-medium">{product.product_name}</p>
+                          <p className="text-white/70 text-sm">Type: {product.product_type}</p>
+                          {product.brand_name && (
+                            <p className="text-white/70 text-sm">Brand: {product.brand_name}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Generated Prompts */}
+                {result.prompts && result.prompts.length > 0 && (
+                  <div className="bg-white/10 rounded-xl p-6">
+                    <h2 className="text-xl font-semibold text-white mb-4">Generated Prompts</h2>
+                    <div className="space-y-2">
+                      {result.prompts.map((prompt, i) => (
+                        <div key={i} className="bg-white/5 rounded-lg p-3">
+                          <p className="text-white/90 text-sm">{prompt}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Session Info */}
+                {result.sessionId && (
+                  <div className="bg-green-500/20 rounded-lg p-4">
+                    <p className="text-green-100">✅ Session saved: {result.sessionId.slice(0, 8)}...</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={reset}
+                  className="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-3 rounded-xl transition-colors"
+                >
+                  Process New Images
+                </button>
+              </div>
+            ) : (
+              <div className="text-center">
+                <AlertCircle className="w-16 h-16 text-red-300 mx-auto mb-4" />
+                <p className="text-white text-lg mb-6">{result.error}</p>
+                <button
+                  onClick={reset}
+                  className="bg-white/20 hover:bg-white/30 text-white font-semibold py-3 px-6 rounded-xl transition-colors"
+                >
+                  Try Again
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-pink-500 to-orange-400 p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-white/10 backdrop-blur-md rounded-3xl p-8 shadow-2xl">
+          <h1 className="text-4xl font-bold text-white mb-2 text-center flex items-center justify-center gap-3">
+            <Sparkles className="w-10 h-10" />
+            Visual God
+          </h1>
+          <p className="text-white/80 text-center mb-8">AI-Powered Content Creator</p>
+
+          {/* Upload Area */}
+          <div
+            className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
+              dragActive ? 'border-white bg-white/10' : 'border-white/30 hover:border-white/50'
+            }`}
+            onDragEnter={handleDrag}
+            onDragLeave={handleDrag}
+            onDragOver={handleDrag}
+            onDrop={handleDrop}
+          >
+            <Upload className="w-16 h-16 text-white/60 mx-auto mb-4" />
+            <p className="text-white text-lg mb-2">Drag & drop images here</p>
+            <p className="text-white/60 mb-4">or</p>
+            <label className="bg-white/20 hover:bg-white/30 text-white font-semibold py-2 px-6 rounded-xl cursor-pointer transition-colors inline-block">
+              Browse Files
+              <input
+                type="file"
+                multiple
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {/* File List */}
+          {files.length > 0 && (
+            <div className="mt-6 space-y-2">
+              {files.map((file, i) => (
+                <div key={i} className="bg-white/10 rounded-lg p-3 flex items-center justify-between">
+                  <span className="text-white text-sm truncate flex-1">{file.name}</span>
+                  <button
+                    onClick={() => removeFile(i)}
+                    className="text-white/60 hover:text-white ml-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Process Button */}
+          {files.length > 0 && (
+            <button
+              onClick={processImages}
+              disabled={processing}
+              className="w-full mt-6 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {processing ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5" />
+                  Generate Content
+                </>
+              )}
+            </button>
+          )}
+
+          {/* Instructions */}
+          <div className="mt-8 bg-white/5 rounded-xl p-6">
+            <h3 className="text-white font-semibold mb-3">How it works:</h3>
+            <ul className="space-y-2 text-white/80 text-sm">
+              <li>📸 Upload clear product images (bottles, gadgets, cosmetics, etc.)</li>
+              <li>👤 Optionally add avatar images for lifestyle content</li>
+              <li>🤖 AI analyzes and classifies your images</li>
+              <li>✨ Get professional marketing prompts instantly</li>
+            </ul>
+          </div>
+        </div>
+      </div>
     </div>
-  );
+  )
 }

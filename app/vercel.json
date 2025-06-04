@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/agent.py": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/process",
+      "destination": "/api/agent.py"
+    }
+  ]
+}
